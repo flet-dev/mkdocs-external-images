@@ -1,7 +1,6 @@
 from pathlib import Path
 
 from mkdocs.config import config_options
-from mkdocs.config.base import Config
 from mkdocs.plugins import BasePlugin
 from mkdocs.structure.files import File, Files
 
