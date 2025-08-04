@@ -1,5 +1,3 @@
-import hashlib
-import shutil
 from pathlib import Path
 from urllib.parse import urlparse
 
@@ -14,12 +12,8 @@ class ExternalImagesPlugin(BasePlugin):
         ("source_dir", config_options.Type(str, required=True)),
         ("target_url_path", config_options.Type(str, default="assets")),
         ("include_exts", config_options.Type(list, default=[".png", ".gif"])),
-        ("clean_target", config_options.Type(bool, default=True)),
-        ("append_hash", config_options.Type(bool, default=False)),
-        ("hash_algo", config_options.Type(str, default="sha1")),
     )
 
-    # -------- lifecycle --------
     def on_config(self, config):
         self._src = Path(self.config["source_dir"]).expanduser().resolve()
         if not self._src.is_dir():
@@ -28,27 +22,22 @@ class ExternalImagesPlugin(BasePlugin):
         self._target = self.config["target_url_path"].strip("/")
         self._site_dir = Path(config["site_dir"]).resolve()
 
+        # normalized extension set
         self._exts = {
             (e if e.startswith(".") else "." + e).lower()
             for e in self.config["include_exts"]
         }
 
-        self._copied = set()  # track rel paths we've already copied
+        # remember what we've copied this run
+        self._copied = set()
         return config
 
-    def on_pre_build(self, config):
-        # Prepare destination root once per build/serve start
-        dst_root = self._dst_root()
-        if self.config["clean_target"] and dst_root.exists():
-            shutil.rmtree(dst_root)
-        dst_root.mkdir(parents=True, exist_ok=True)
-
     def on_serve(self, server, config, builder):
-        # Re-render when source images change
+        # Re-render when external images change
         server.watch(str(self._src))
         return server
 
-    # -------- helpers --------
+    # ---- helpers ----
     def _dst_root(self) -> Path:
         return self._site_dir / self._target
 
@@ -56,14 +45,8 @@ class ExternalImagesPlugin(BasePlugin):
         return p.suffix.lower() in self._exts
 
     def _asset_url(self, rel: Path) -> str:
-        url = f"/{self._target}/{rel.as_posix()}"
-        if self.config["append_hash"]:
-            h = hashlib.new(self.config["hash_algo"])
-            with open(self._src / rel, "rb") as f:
-                for chunk in iter(lambda: f.read(65536), b""):
-                    h.update(chunk)
-            url += f"?v={h.hexdigest()[:12]}"
-        return url
+        # absolute URL under site root (switch to relative if you prefer)
+        return f"/{self._target}/{rel.as_posix()}"
 
     def _copy_on_demand(self, rel: Path):
         """Copy file into site/{target_url_path}/... if not already copied."""
@@ -80,7 +63,7 @@ class ExternalImagesPlugin(BasePlugin):
     def _maybe_rewrite_relative(self, page, url_str: str):
         """
         If url_str is a relative path that resolves to a file under source_dir
-        (ext allowed), copy it immediately and return the public URL; else None.
+        (with an allowed extension), copy it immediately and return the public URL.
         """
         if not url_str:
             return None
@@ -98,12 +81,14 @@ class ExternalImagesPlugin(BasePlugin):
             and self._is_allowed(abs_try)
         ):
             rel_norm = abs_try.relative_to(self._src)
+            # ensure destination root exists once lazily
+            self._dst_root().mkdir(parents=True, exist_ok=True)
             self._copy_on_demand(rel_norm)
             return self._asset_url(rel_norm)
 
         return None
 
-    # -------- rewrite only <img src> and <a href> --------
+    # ---- rewrite only <img src> and <a href> ----
     def on_page_content(self, html, page, config, files):
         soup = BeautifulSoup(html, "html.parser")
 
