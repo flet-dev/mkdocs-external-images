@@ -1,5 +1,11 @@
 # mkdocs-external-images
 
+---
+
+**THIS REPOSITORY HAS BEEN ARCHIVED.** Flet documentation moved from MkDocs to Docusaurus.
+
+---
+
 A MkDocs plugin that lets you reference and publish files from directories outside `docs_dir` by mapping them into a path within the generated site.
 
 Configuring in `mkdocs.yml`:
